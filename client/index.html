@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Multiplayer Dino Game</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #eee;
+      }
+      #gameCanvas {
+        display: block;
+      }
+      #restartButton {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        padding: 10px 20px;
+        font-size: 16px;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="restartButton">Restart Game</button>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+      let ws = new WebSocket("ws://localhost:8080/ws");
+      let playerID = null;
+      let gameState = null;
+      let gameOver = false;
+      let cooldowns = {
+        dash: false,
+        obstacle: false,
+      };
+
+      ws.onopen = function () {
+        console.log("Connected to server");
+      };
+
+      ws.onmessage = function (event) {
+        let msg = JSON.parse(event.data);
+
+        if (msg.type === "init") {
+          playerID = msg.id;
+          console.log("Your player ID:", playerID);
+        } else if (msg.type === "state") {
+          gameState = msg;
+          drawGame();
+        } else if (msg.type === "gameover") {
+          gameOver = true;
+          document.getElementById("restartButton").style.display = "block";
+        }
+      };
+
+      ws.onclose = function () {
+        console.log("Disconnected from server");
+      };
+
+      document.addEventListener("keydown", function (event) {
+        if (!gameOver) {
+          switch (event.code) {
+            case "Space":
+              ws.send(JSON.stringify({ type: "jump" }));
+              break;
+            case "KeyA":
+              ws.send(JSON.stringify({ type: "left" }));
+              break;
+            case "KeyD":
+              ws.send(JSON.stringify({ type: "right" }));
+              break;
+            case "KeyO":
+              if (!cooldowns.dash) {
+                ws.send(JSON.stringify({ type: "dash" }));
+                cooldowns.dash = true;
+                setTimeout(() => (cooldowns.dash = false), 10000); // 10-second cooldown
+              }
+              break;
+            case "KeyP":
+              if (!cooldowns.obstacle) {
+                ws.send(JSON.stringify({ type: "moveObstacle" }));
+                cooldowns.obstacle = true;
+                setTimeout(() => (cooldowns.obstacle = false), 10000); // 10-second cooldown
+              }
+              break;
+          }
+        }
+      });
+
+      document
+        .getElementById("restartButton")
+        .addEventListener("click", function () {
+          ws.send(JSON.stringify({ type: "restart" }));
+          gameOver = false;
+          this.style.display = "none";
+        });
+
+      let canvas = document.getElementById("gameCanvas");
+      let ctx = canvas.getContext("2d");
+
+      // Resize canvas to full screen
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+
+      window.addEventListener("resize", resizeCanvas, false);
+      resizeCanvas();
+
+      function drawGame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Ground level
+        let groundY = canvas.height - 100;
+
+        // Draw ground
+        ctx.fillStyle = "#888";
+        ctx.fillRect(0, groundY, canvas.width, 5);
+
+        // Draw players
+        for (let p of gameState.players) {
+          if (!p.alive) continue;
+          ctx.fillStyle = p.id === playerID ? "blue" : "black";
+          ctx.fillRect(p.positionX, groundY - p.positionY - 50, 50, 50);
+        }
+
+        // Draw obstacles
+        ctx.fillStyle = "red";
+        for (let obs of gameState.obstacles) {
+          ctx.fillRect(obs.positionX, groundY - 50, 20, 50);
+        }
+      }
+    </script>
+  </body>
+</html>
